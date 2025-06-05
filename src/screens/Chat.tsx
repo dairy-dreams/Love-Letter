@@ -1,4 +1,4 @@
-import React, {useLayoutEffect, useRef, useState} from 'react';
+import React, {useContext, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {
   Button,
   Image,
@@ -14,40 +14,34 @@ import {FlatList, GestureHandlerRootView} from 'react-native-gesture-handler';
 import {Text} from 'react-native-gesture-handler';
 import {primary} from '../CONSTANTS/COLOR';
 import {Swipeable} from 'react-native-gesture-handler';
-
-const AVATAR_MAP: Record<string, string> = {
-  Alice: 'https://randomuser.me/api/portraits/women/1.jpg',
-  Bob: 'https://randomuser.me/api/portraits/men/2.jpg',
-  Charlie: 'https://randomuser.me/api/portraits/men/3.jpg',
-  'Mr. Houf': 'https://randomuser.me/api/portraits/men/3.jpg',
-  Walter: 'https://randomuser.me/api/portraits/women/4.jpg',
-  John: 'https://randomuser.me/api/portraits/women/5.jpg',
-  Jack: 'https://randomuser.me/api/portraits/women/6.jpg',
-  Morgan: 'https://randomuser.me/api/portraits/women/7.jpg',
-  Steve: 'https://randomuser.me/api/portraits/women/8.jpg',
-  Warren: 'https://randomuser.me/api/portraits/women/9.jpg',
-  Lixun: 'https://randomuser.me/api/portraits/women/10.jpg',
-};
+import { db } from '../../firebaseConfig';
+import { AuthContext } from '../../App';
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
 
 export default function ChatScreen({navigation, route}: any) {
-  const {userName} = route.params || {};
-  const avatar =
-    AVATAR_MAP[userName] || 'https://randomuser.me/api/portraits/lego/1.jpg';
-
-  // Message state
-  const [messages, setMessages] = useState([
-    {id: '1', text: `Hi, I'm ${userName}!`, sender: 'them'},
-    {id: '2', text: 'Hello!', sender: 'me'},
-    {id: '3', text: 'How are you?', sender: 'me'},
-    {id: '4', text: "I'm good, thanks!", sender: 'them'},
-  ]);
+  const { user } = useContext(AuthContext);
+  const { userId, userName, avatar } = route.params || {};
+  const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [replyTo, setReplyTo] = useState<any>(null);
   const flatListRef = useRef<FlatList>(null);
-
-  // Keyboard handling
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
+  // Generate a unique chatId for the two users (sorted)
+  const chatId = [user.uid, userId].sort().join('_');
+
+  useEffect(() => {
+    const q = query(
+      collection(db, 'chats', chatId, 'messages'),
+      orderBy('createdAt')
+    );
+    const unsub = onSnapshot(q, snap => {
+      setMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return unsub;
+  }, [chatId]);
+
+  // Keyboard handling
   React.useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', e => {
       setKeyboardHeight(e.endCoordinates.height + (replyTo ? 60 : 30));
@@ -76,17 +70,15 @@ export default function ChatScreen({navigation, route}: any) {
     });
   }, [navigation, userName, avatar]);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (input.trim()) {
-      setMessages(prev => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          text: input,
-          sender: 'me',
-          replyTo: replyTo ? replyTo.text : undefined,
-        },
-      ]);
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        text: input,
+        sender: user.uid,
+        senderName: user.displayName,
+        createdAt: serverTimestamp(),
+        replyTo: replyTo ? replyTo.text : undefined,
+      });
       setInput('');
       setReplyTo(null);
       setTimeout(() => {
@@ -111,9 +103,6 @@ export default function ChatScreen({navigation, route}: any) {
   const renderItem = ({item}: any) => (
     <Swipeable
       renderLeftActions={(progress, dragX) =>
-        // item.sender === "them"
-        //   ? renderLeftActions(progress, dragX, item)
-        //   : null
         renderLeftActions(progress, dragX, item)
       }
       onSwipeableLeftOpen={() => handleSwipeReply(item)}
@@ -122,17 +111,17 @@ export default function ChatScreen({navigation, route}: any) {
       <View
         style={[
           styles.messageContainer,
-          item.sender === 'me' ? styles.myMessage : styles.theirMessage,
+          item.sender === user.uid ? styles.myMessage : styles.theirMessage,
         ]}>
         {item.replyTo && (
           <View style={styles.replyToContainer}>
-            <Text style={styles.replyToText}>{item.sender}: {item.replyTo}</Text>
+            <Text style={styles.replyToText}>{item.replyTo}</Text>
           </View>
         )}
         <Text
           style={[
             styles.messageText,
-            item.sender === 'me'
+            item.sender === user.uid
               ? styles.myMessageText
               : styles.theirMessageText,
           ]}>
@@ -160,8 +149,6 @@ export default function ChatScreen({navigation, route}: any) {
               flatListRef.current?.scrollToEnd({animated: true})
             }
           />
-          <View style={styles.inputBar}>
-            <View style={{flex: 1, flexDirection: 'column'}}>
               {replyTo && (
                 <View style={styles.replyPreview}>
                   <Text style={styles.replyPreviewText} numberOfLines={1}>
@@ -172,6 +159,8 @@ export default function ChatScreen({navigation, route}: any) {
                   </TouchableOpacity>
                 </View>
               )}
+          <View style={styles.inputBar}>
+            <View style={{flex: 1, flexDirection: 'column'}}>
               <TextInput
                 style={[
                   styles.input,

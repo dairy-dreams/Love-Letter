@@ -1,23 +1,10 @@
-import React, { useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { FlatList, StyleSheet, View, TouchableOpacity, Image, TextInput } from 'react-native';
 import { Text } from 'react-native-gesture-handler';
 import { primary, secondary } from '../CONSTANTS/COLOR';
-
-// Dummy users data
-const users = [
-  { id: '1', name: 'Alice', avatar: { uri: 'https://randomuser.me/api/portraits/women/1.jpg' } },
-  { id: '2', name: 'Bob', avatar: { uri: 'https://randomuser.me/api/portraits/men/2.jpg' } },
-  { id: '3', name: 'Charlie', avatar: { uri: 'https://randomuser.me/api/portraits/men/3.jpg' } },
-  { id: '4', name: 'Mr. Houf', avatar: { uri: 'https://randomuser.me/api/portraits/men/3.jpg' } },
-  { id: '5', name: 'Bob', avatar: { uri: 'https://randomuser.me/api/portraits/men/12.jpg' } },
-  { id: '6', name: 'Walter', avatar: { uri: 'https://randomuser.me/api/portraits/women/4.jpg' } },
-  { id: '7', name: 'John', avatar: { uri: 'https://randomuser.me/api/portraits/women/5.jpg' } },
-  { id: '8', name: 'Jack', avatar: { uri: 'https://randomuser.me/api/portraits/women/6.jpg' } },
-  { id: '9', name: 'Morgan', avatar: { uri: 'https://randomuser.me/api/portraits/women/7.jpg' } },
-  { id: '10', name: 'Steve', avatar: { uri: 'https://randomuser.me/api/portraits/women/8.jpg' } },
-  { id: '11', name: 'Warren', avatar: { uri: 'https://randomuser.me/api/portraits/women/9.jpg' } },
-  { id: '12', name: 'Lixun', avatar: { uri: 'https://randomuser.me/api/portraits/women/10.jpg' } },
-];
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { db } from '../../firebaseConfig';
+import { AuthContext } from '../../App';
 
 const TABS = [
   { key: 'chat', label: 'Chat' },
@@ -27,24 +14,38 @@ const TABS = [
 ];
 
 export default function HomeScreen({ navigation }: any) {
+  const { user } = useContext(AuthContext);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('chat');
+  const [users, setUsers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'users'),
+      where('uid', '!=', user.uid)
+    );
+    const unsub = onSnapshot(q, snap => {
+      setUsers(snap.docs.map(doc => doc.data()));
+    });
+    return unsub;
+  }, [user]);
+
   const filteredUsers = users.filter(u =>
-    u.name.toLowerCase().includes(search.toLowerCase())
+    u.name?.toLowerCase().includes(search.toLowerCase())
   );
 
   const renderItem = ({ item }: any) => (
     <TouchableOpacity
       style={styles.userItem}
-      onPress={() => navigation.navigate('Chat', { userId: item.id, userName: item.name })}
+      onPress={() => navigation.navigate('Chat', { userId: item.uid, userName: item.name, avatar: item.avatar })}
       activeOpacity={0.7}
     >
-      <Image source={item.avatar} style={styles.avatar} />
+      <Image source={{ uri: item.avatar }} style={styles.avatar} />
       <Text style={styles.userName}>{item.name}</Text>
     </TouchableOpacity>
   );
 
-  // You can conditionally render content based on activeTab if needed
   return (
     <View style={styles.screen}>
       <Text style={styles.heading}>Lover Letter</Text>
